@@ -1,10 +1,18 @@
 import os
 import requests
+import google.generativeai as genai
 from flask import Flask, request
 
 app = Flask(__name__)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+GEMINI_KEY = os.getenv("GEMINI_API_KEY")
+
+# Setup Gemini AI
+if GEMINI_KEY:
+    genai.configure(api_key=GEMINI_KEY)
+    model = genai.GenerativeModel('gemini-2.0-flash-lite')
+    print("✅ Gemini AI enabled")
 
 def send_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -12,7 +20,7 @@ def send_message(chat_id, text):
     try:
         requests.post(url, json=data, timeout=10)
     except Exception as e:
-        print(f"Error sending: {e}")
+        print(f"Error: {e}")
 
 @app.route(f'/{TOKEN}', methods=['POST'])
 def webhook():
@@ -23,7 +31,19 @@ def webhook():
             text = update['message'].get('text', '')
             
             if text:
-                send_message(chat_id, f"You said: {text}")
+                # Try AI if API key exists
+                if GEMINI_KEY:
+                    try:
+                        response = model.generate_content(
+                            f"You are BizAssist AI, a business assistant. Reply short and helpful. User: {text}"
+                        )
+                        reply = response.text.strip()
+                    except Exception as e:
+                        reply = f"AI error: {e}"
+                else:
+                    reply = f"Add GEMINI_API_KEY to enable AI. You said: {text}"
+                
+                send_message(chat_id, reply)
         
         return 'ok', 200
     except Exception as e:
@@ -32,9 +52,10 @@ def webhook():
 
 @app.route('/')
 def home():
-    return "Bot is running!"
+    return "BizAssist AI Bot is running!"
 
 if __name__ == '__main__':
+    # Set webhook
     webhook_url = f"https://businessassitbot-yhj7.onrender.com/{TOKEN}"
     set_url = f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={webhook_url}"
     response = requests.post(set_url)
